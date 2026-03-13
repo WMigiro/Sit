@@ -1,0 +1,250 @@
+{
+  "definition": {
+    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+    "contentVersion": "1.0.0.0",
+    "triggers": {
+      "Daily_Reminder_Check": {
+        "type": "Recurrence",
+        "recurrence": {
+          "frequency": "Day",
+          "interval": 1,
+          "timeZone": "E. Africa Standard Time",
+          "schedule": {
+            "hours": ["8"],
+            "minutes": [0]
+          }
+        }
+      }
+    },
+    "actions": {
+      "Get_Today_EAT": {
+        "type": "Compose",
+        "inputs": "@startOfDay(convertTimeZone(utcNow(),'UTC','E. Africa Standard Time'))",
+        "runAfter": {}
+      },
+      "Get_Vaccination_Records": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "parameters": {
+            "dataset": "YOUR_SHAREPOINT_SITE_URL",
+            "table": "YOUR_LIST_GUID_OR_NAME",
+            "$filter": "SecondDose ne null or ThirdDose ne null"
+          },
+          "host": {
+            "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+            "connection": "shared_sharepointonline",
+            "operationId": "GetItems"
+          }
+        },
+        "runAfter": {
+          "Get_Today_EAT": ["Succeeded"]
+        }
+      },
+      "Loop_Through_Staff": {
+        "type": "Foreach",
+        "foreach": "@outputs('Get_Vaccination_Records')?['body/value']",
+        "actions": {
+          "Calculate_Days_Until_SecondDose": {
+            "type": "Compose",
+            "inputs": "@if(empty(items('Loop_Through_Staff')?['SecondDose']), -999, div(sub(ticks(items('Loop_Through_Staff')?['SecondDose']),ticks(outputs('Get_Today_EAT'))),864000000000))",
+            "runAfter": {}
+          },
+          "Calculate_Days_Until_ThirdDose": {
+            "type": "Compose",
+            "inputs": "@if(empty(items('Loop_Through_Staff')?['ThirdDose']), -999, div(sub(ticks(items('Loop_Through_Staff')?['ThirdDose']),ticks(outputs('Get_Today_EAT'))),864000000000))",
+            "runAfter": {}
+          },
+          "Check_SecondDose_7_Days": {
+            "type": "If",
+            "expression": {
+              "equals": [
+                "@outputs('Calculate_Days_Until_SecondDose')",
+                7
+              ]
+            },
+            "actions": {
+              "Email_SecondDose_7_Days": {
+                "type": "OpenApiConnection",
+                "inputs": {
+                  "parameters": {
+                    "emailMessage/To": "@items('Loop_Through_Staff')?['Email']",
+                    "emailMessage/Subject": "Reminder: Your Second Vaccine Dose in 7 Days",
+                    "emailMessage/Body": "<p>Dear @{items('Loop_Through_Staff')?['StaffName']},</p><p>This is a friendly reminder that your <strong>second vaccination dose</strong> is scheduled for:</p><p><strong>Date: @{formatDateTime(items('Loop_Through_Staff')?['SecondDose'], 'dddd, MMMM d, yyyy')}</strong></p><p>Please mark your calendar and ensure you visit the staff clinic on the scheduled date.</p><p>Your health and safety are our priority.</p><p>Best regards,<br>Staff Clinic Team</p>",
+                    "emailMessage/Importance": "Normal"
+                  },
+                  "host": {
+                    "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                    "connection": "shared_office365",
+                    "operationId": "SendEmailV2"
+                  }
+                }
+              }
+            },
+            "else": { "actions": {} },
+            "runAfter": {
+              "Calculate_Days_Until_SecondDose": ["Succeeded"]
+            }
+          },
+          "Check_SecondDose_3_Days": {
+            "type": "If",
+            "expression": {
+              "equals": [
+                "@outputs('Calculate_Days_Until_SecondDose')",
+                3
+              ]
+            },
+            "actions": {
+              "Email_SecondDose_3_Days": {
+                "type": "OpenApiConnection",
+                "inputs": {
+                  "parameters": {
+                    "emailMessage/To": "@items('Loop_Through_Staff')?['Email']",
+                    "emailMessage/Subject": "Reminder: Your Second Vaccine Dose in 3 Days",
+                    "emailMessage/Body": "<p>Dear @{items('Loop_Through_Staff')?['StaffName']},</p><p>This is a reminder that your <strong>second vaccination dose</strong> is coming up in <strong>3 days</strong>:</p><p><strong>Date: @{formatDateTime(items('Loop_Through_Staff')?['SecondDose'], 'dddd, MMMM d, yyyy')}</strong></p><p>Please ensure you are available to visit the staff clinic on the scheduled date.</p><p>Your health and safety are our priority.</p><p>Best regards,<br>Staff Clinic Team</p>",
+                    "emailMessage/Importance": "Normal"
+                  },
+                  "host": {
+                    "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                    "connection": "shared_office365",
+                    "operationId": "SendEmailV2"
+                  }
+                }
+              }
+            },
+            "else": { "actions": {} },
+            "runAfter": {
+              "Check_SecondDose_7_Days": ["Succeeded"]
+            }
+          },
+          "Check_SecondDose_1_Day": {
+            "type": "If",
+            "expression": {
+              "equals": [
+                "@outputs('Calculate_Days_Until_SecondDose')",
+                1
+              ]
+            },
+            "actions": {
+              "Email_SecondDose_1_Day": {
+                "type": "OpenApiConnection",
+                "inputs": {
+                  "parameters": {
+                    "emailMessage/To": "@items('Loop_Through_Staff')?['Email']",
+                    "emailMessage/Subject": "TOMORROW: Your Second Vaccine Dose",
+                    "emailMessage/Body": "<p>Dear @{items('Loop_Through_Staff')?['StaffName']},</p><p><strong>Your second vaccination dose is TOMORROW!</strong></p><p><strong>Date: @{formatDateTime(items('Loop_Through_Staff')?['SecondDose'], 'dddd, MMMM d, yyyy')}</strong></p><p>Please visit the staff clinic tomorrow for your vaccination. Do not forget to bring your ID and vaccination card.</p><p>Your health and safety are our priority.</p><p>Best regards,<br>Staff Clinic Team</p>",
+                    "emailMessage/Importance": "High"
+                  },
+                  "host": {
+                    "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                    "connection": "shared_office365",
+                    "operationId": "SendEmailV2"
+                  }
+                }
+              }
+            },
+            "else": { "actions": {} },
+            "runAfter": {
+              "Check_SecondDose_3_Days": ["Succeeded"]
+            }
+          },
+          "Check_ThirdDose_7_Days": {
+            "type": "If",
+            "expression": {
+              "equals": [
+                "@outputs('Calculate_Days_Until_ThirdDose')",
+                7
+              ]
+            },
+            "actions": {
+              "Email_ThirdDose_7_Days": {
+                "type": "OpenApiConnection",
+                "inputs": {
+                  "parameters": {
+                    "emailMessage/To": "@items('Loop_Through_Staff')?['Email']",
+                    "emailMessage/Subject": "Reminder: Your Third Vaccine Dose in 7 Days",
+                    "emailMessage/Body": "<p>Dear @{items('Loop_Through_Staff')?['StaffName']},</p><p>This is a friendly reminder that your <strong>third (booster) vaccination dose</strong> is scheduled for:</p><p><strong>Date: @{formatDateTime(items('Loop_Through_Staff')?['ThirdDose'], 'dddd, MMMM d, yyyy')}</strong></p><p>Please mark your calendar and ensure you visit the staff clinic on the scheduled date.</p><p>Your health and safety are our priority.</p><p>Best regards,<br>Staff Clinic Team</p>",
+                    "emailMessage/Importance": "Normal"
+                  },
+                  "host": {
+                    "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                    "connection": "shared_office365",
+                    "operationId": "SendEmailV2"
+                  }
+                }
+              }
+            },
+            "else": { "actions": {} },
+            "runAfter": {
+              "Calculate_Days_Until_ThirdDose": ["Succeeded"]
+            }
+          },
+          "Check_ThirdDose_3_Days": {
+            "type": "If",
+            "expression": {
+              "equals": [
+                "@outputs('Calculate_Days_Until_ThirdDose')",
+                3
+              ]
+            },
+            "actions": {
+              "Email_ThirdDose_3_Days": {
+                "type": "OpenApiConnection",
+                "inputs": {
+                  "parameters": {
+                    "emailMessage/To": "@items('Loop_Through_Staff')?['Email']",
+                    "emailMessage/Subject": "Reminder: Your Third Vaccine Dose in 3 Days",
+                    "emailMessage/Body": "<p>Dear @{items('Loop_Through_Staff')?['StaffName']},</p><p>This is a reminder that your <strong>third (booster) vaccination dose</strong> is coming up in <strong>3 days</strong>:</p><p><strong>Date: @{formatDateTime(items('Loop_Through_Staff')?['ThirdDose'], 'dddd, MMMM d, yyyy')}</strong></p><p>Please ensure you are available to visit the staff clinic on the scheduled date.</p><p>Your health and safety are our priority.</p><p>Best regards,<br>Staff Clinic Team</p>",
+                    "emailMessage/Importance": "Normal"
+                  },
+                  "host": {
+                    "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                    "connection": "shared_office365",
+                    "operationId": "SendEmailV2"
+                  }
+                }
+              }
+            },
+            "else": { "actions": {} },
+            "runAfter": {
+              "Check_ThirdDose_7_Days": ["Succeeded"]
+            }
+          },
+          "Check_ThirdDose_1_Day": {
+            "type": "If",
+            "expression": {
+              "equals": [
+                "@outputs('Calculate_Days_Until_ThirdDose')",
+                1
+              ]
+            },
+            "actions": {
+              "Email_ThirdDose_1_Day": {
+                "type": "OpenApiConnection",
+                "inputs": {
+                  "parameters": {
+                    "emailMessage/To": "@items('Loop_Through_Staff')?['Email']",
+                    "emailMessage/Subject": "TOMORROW: Your Third Vaccine Dose",
+                    "emailMessage/Body": "<p>Dear @{items('Loop_Through_Staff')?['StaffName']},</p><p><strong>Your third (booster) vaccination dose is TOMORROW!</strong></p><p><strong>Date: @{formatDateTime(items('Loop_Through_Staff')?['ThirdDose'], 'dddd, MMMM d, yyyy')}</strong></p><p>Please visit the staff clinic tomorrow for your vaccination. Do not forget to bring your ID and vaccination card.</p><p>Your health and safety are our priority.</p><p>Best regards,<br>Staff Clinic Team</p>",
+                    "emailMessage/Importance": "High"
+                  },
+                  "host": {
+                    "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                    "connection": "shared_office365",
+                    "operationId": "SendEmailV2"
+                  }
+                }
+              }
+            },
+            "else": { "actions": {} },
+            "runAfter": {
+              "Check_ThirdDose_3_Days": ["Succeeded"]
+            }
+          }
+        },
+        "runAfter": {
+          "Get_Vaccination_Records": ["Succeeded"]
+        }
+      }
+    }
+  }
+}

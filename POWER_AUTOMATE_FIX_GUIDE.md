@@ -14,11 +14,20 @@ Your current flow has these problems:
 
 ### Step 1: Fix the Recurrence Trigger
 
-**Current:** Runs daily at 4:00 AM UTC
+**Current:** Runs daily at 4:00 AM UTC (which is 7:00 AM EAT)
 
-**Recommendation:** Adjust to your local timezone. Go to trigger settings and:
-- Set **Time zone** to your local timezone (e.g., "East Africa Standard Time")
-- Set **At these hours** to a reasonable time like 8 AM
+**Fix for East Africa Time (UTC+3):**
+
+1. Click on your **Recurrence** trigger
+2. Click **Edit** or expand the trigger settings
+3. Set the following:
+   - **Interval:** 1
+   - **Frequency:** Day
+   - **Time zone:** Select `(UTC+03:00) Nairobi` or `E. Africa Standard Time`
+   - **At these hours:** 8 (for 8:00 AM EAT)
+   - **At these minutes:** 0
+
+**Important:** East Africa Time does NOT observe Daylight Saving Time, so `E. Africa Standard Time` is consistent year-round.
 
 ---
 
@@ -36,16 +45,23 @@ SecondDose ne null
 
 ### Step 3: Add a Condition Inside "For Each" to Check Days Until Second Dose
 
-After the "For each" action, add a **Compose** action to calculate days remaining:
+After the "For each" action, add **two Compose** actions:
 
-**Action:** Compose  
+**Action 1:** Compose  
+**Name:** `Get_Today_EAT`  
+**Inputs:**
+```
+@{startOfDay(convertTimeZone(utcNow(), 'UTC', 'E. Africa Standard Time'))}
+```
+
+**Action 2:** Compose  
 **Name:** `Calculate_Days_Until_SecondDose`  
 **Inputs:**
 ```
-@{div(sub(ticks(items('For_each')?['SecondDose']),ticks(startOfDay(utcNow()))),864000000000)}
+@{div(sub(ticks(items('For_each')?['SecondDose']),ticks(outputs('Get_Today_EAT'))),864000000000)}
 ```
 
-This calculates the number of days between today and the SecondDose date.
+This calculates the number of days between today (in East Africa Time) and the SecondDose date.
 
 ---
 
@@ -228,29 +244,35 @@ Recurrence (Daily at 8 AM local time)
 
 ---
 
-## Expression Reference
+## Expression Reference (East Africa Time)
 
-**Get today's date (start of day):**
+**Get current time in EAT:**
 ```
-@{startOfDay(utcNow())}
-```
-
-**Add days to a date:**
-```
-@{addDays(utcNow(), 7)}
+@{convertTimeZone(utcNow(), 'UTC', 'E. Africa Standard Time')}
 ```
 
-**Format date for display:**
+**Get today's date at midnight (EAT):**
 ```
-@{formatDateTime(items('For_each')?['SecondDose'], 'MMMM d, yyyy')}
-```
-
-**Calculate days between dates:**
-```
-@{div(sub(ticks(futureDate),ticks(startOfDay(utcNow()))),864000000000)}
+@{startOfDay(convertTimeZone(utcNow(), 'UTC', 'E. Africa Standard Time'))}
 ```
 
-**Convert timezone:**
+**Add days to current EAT date:**
 ```
-@{convertTimeZone(utcNow(), 'UTC', 'East Africa Standard Time')}
+@{addDays(convertTimeZone(utcNow(), 'UTC', 'E. Africa Standard Time'), 7)}
 ```
+
+**Format date for display (user-friendly):**
+```
+@{formatDateTime(items('For_each')?['SecondDose'], 'dddd, MMMM d, yyyy')}
+```
+Output example: `Monday, March 20, 2026`
+
+**Calculate days between dates (EAT-aware):**
+```
+@{div(sub(ticks(futureDate),ticks(startOfDay(convertTimeZone(utcNow(), 'UTC', 'E. Africa Standard Time')))),864000000000)}
+```
+
+**Timezone identifier for East Africa:**
+- Power Automate: `E. Africa Standard Time`
+- Alternative: `(UTC+03:00) Nairobi`
+- Offset: UTC+3 (no daylight saving changes)

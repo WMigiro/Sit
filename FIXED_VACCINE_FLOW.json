@@ -1,0 +1,249 @@
+{
+  "name": "Vaccine_Dosage_Reminder_Fixed",
+  "properties": {
+    "displayName": "Vaccine Dosage Reminder - Fixed",
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "$authentication": {
+          "defaultValue": {},
+          "type": "SecureObject"
+        },
+        "$connections": {
+          "defaultValue": {},
+          "type": "Object"
+        }
+      },
+      "triggers": {
+        "Recurrence": {
+          "recurrence": {
+            "frequency": "Day",
+            "interval": 1,
+            "startTime": "2026-03-14T07:00:00.000Z",
+            "timeZone": "E. Africa Standard Time",
+            "schedule": {
+              "hours": ["8"],
+              "minutes": [0]
+            }
+          },
+          "type": "Recurrence"
+        }
+      },
+      "actions": {
+        "Get_Staff_Records": {
+          "runAfter": {},
+          "type": "OpenApiConnection",
+          "inputs": {
+            "parameters": {
+              "dataset": "https://nbihosporg.sharepoint.com/sites/organization/ict",
+              "table": "4c145f69-521e-4100-a2fa-e2c5b64f0ad7"
+            },
+            "host": {
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+              "connectionName": "shared_sharepointonline",
+              "operationId": "GetItems"
+            },
+            "authentication": "@parameters('$authentication')"
+          }
+        },
+        "Get_Today_EAT": {
+          "runAfter": {
+            "Get_Staff_Records": ["Succeeded"]
+          },
+          "type": "Compose",
+          "inputs": "@startOfDay(convertTimeZone(utcNow(),'UTC','E. Africa Standard Time'))"
+        },
+        "Loop_Through_Staff": {
+          "foreach": "@outputs('Get_Staff_Records')?['body/value']",
+          "runAfter": {
+            "Get_Today_EAT": ["Succeeded"]
+          },
+          "type": "Foreach",
+          "actions": {
+            "Calculate_Days_Until_SecondDose": {
+              "runAfter": {},
+              "type": "Compose",
+              "inputs": "@if(empty(items('Loop_Through_Staff')?['SecondDose']), -999, div(sub(ticks(items('Loop_Through_Staff')?['SecondDose']),ticks(outputs('Get_Today_EAT'))),864000000000))"
+            },
+            "Calculate_Days_Until_ThirdDose": {
+              "runAfter": {
+                "Calculate_Days_Until_SecondDose": ["Succeeded"]
+              },
+              "type": "Compose",
+              "inputs": "@if(empty(items('Loop_Through_Staff')?['ThirdDose']), -999, div(sub(ticks(items('Loop_Through_Staff')?['ThirdDose']),ticks(outputs('Get_Today_EAT'))),864000000000))"
+            },
+            "Check_SecondDose_7_Days": {
+              "runAfter": {
+                "Calculate_Days_Until_ThirdDose": ["Succeeded"]
+              },
+              "type": "If",
+              "expression": {
+                "equals": ["@outputs('Calculate_Days_Until_SecondDose')", 7]
+              },
+              "actions": {
+                "Send_SecondDose_7Day_Reminder": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "parameters": {
+                      "emailMessage/To": "@items('Loop_Through_Staff')?['Email']",
+                      "emailMessage/Subject": "Reminder: Your Second Vaccine Dose is in 7 Days",
+                      "emailMessage/Body": "<p>Dear @{items('Loop_Through_Staff')?['StaffName']},</p><p>This is a friendly reminder that your <strong>second vaccine dose</strong> is scheduled for <strong>@{formatDateTime(items('Loop_Through_Staff')?['SecondDose'], 'dddd, MMMM d, yyyy')}</strong> (7 days from now).</p><p>Please ensure you are available on this date.</p><p>Best regards,<br>NBI Hospital Health Team</p>",
+                      "emailMessage/Importance": "Normal"
+                    },
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                      "connectionName": "shared_office365",
+                      "operationId": "SendEmailV2"
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  }
+                }
+              }
+            },
+            "Check_SecondDose_3_Days": {
+              "runAfter": {
+                "Check_SecondDose_7_Days": ["Succeeded"]
+              },
+              "type": "If",
+              "expression": {
+                "equals": ["@outputs('Calculate_Days_Until_SecondDose')", 3]
+              },
+              "actions": {
+                "Send_SecondDose_3Day_Reminder": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "parameters": {
+                      "emailMessage/To": "@items('Loop_Through_Staff')?['Email']",
+                      "emailMessage/Subject": "Reminder: Your Second Vaccine Dose is in 3 Days",
+                      "emailMessage/Body": "<p>Dear @{items('Loop_Through_Staff')?['StaffName']},</p><p>This is a reminder that your <strong>second vaccine dose</strong> is scheduled for <strong>@{formatDateTime(items('Loop_Through_Staff')?['SecondDose'], 'dddd, MMMM d, yyyy')}</strong> (3 days from now).</p><p>Please make the necessary arrangements.</p><p>Best regards,<br>NBI Hospital Health Team</p>",
+                      "emailMessage/Importance": "Normal"
+                    },
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                      "connectionName": "shared_office365",
+                      "operationId": "SendEmailV2"
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  }
+                }
+              }
+            },
+            "Check_SecondDose_1_Day": {
+              "runAfter": {
+                "Check_SecondDose_3_Days": ["Succeeded"]
+              },
+              "type": "If",
+              "expression": {
+                "equals": ["@outputs('Calculate_Days_Until_SecondDose')", 1]
+              },
+              "actions": {
+                "Send_SecondDose_1Day_Reminder": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "parameters": {
+                      "emailMessage/To": "@items('Loop_Through_Staff')?['Email']",
+                      "emailMessage/Subject": "TOMORROW: Your Second Vaccine Dose",
+                      "emailMessage/Body": "<p>Dear @{items('Loop_Through_Staff')?['StaffName']},</p><p><strong>IMPORTANT:</strong> Your <strong>second vaccine dose</strong> is scheduled for <strong>TOMORROW</strong> (@{formatDateTime(items('Loop_Through_Staff')?['SecondDose'], 'dddd, MMMM d, yyyy')}).</p><p>Please ensure you are ready for your vaccination.</p><p>Best regards,<br>NBI Hospital Health Team</p>",
+                      "emailMessage/Importance": "High"
+                    },
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                      "connectionName": "shared_office365",
+                      "operationId": "SendEmailV2"
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  }
+                }
+              }
+            },
+            "Check_ThirdDose_7_Days": {
+              "runAfter": {
+                "Check_SecondDose_1_Day": ["Succeeded"]
+              },
+              "type": "If",
+              "expression": {
+                "equals": ["@outputs('Calculate_Days_Until_ThirdDose')", 7]
+              },
+              "actions": {
+                "Send_ThirdDose_7Day_Reminder": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "parameters": {
+                      "emailMessage/To": "@items('Loop_Through_Staff')?['Email']",
+                      "emailMessage/Subject": "Reminder: Your Third Vaccine Dose is in 7 Days",
+                      "emailMessage/Body": "<p>Dear @{items('Loop_Through_Staff')?['StaffName']},</p><p>This is a friendly reminder that your <strong>third vaccine dose (booster)</strong> is scheduled for <strong>@{formatDateTime(items('Loop_Through_Staff')?['ThirdDose'], 'dddd, MMMM d, yyyy')}</strong> (7 days from now).</p><p>Please ensure you are available on this date.</p><p>Best regards,<br>NBI Hospital Health Team</p>",
+                      "emailMessage/Importance": "Normal"
+                    },
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                      "connectionName": "shared_office365",
+                      "operationId": "SendEmailV2"
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  }
+                }
+              }
+            },
+            "Check_ThirdDose_3_Days": {
+              "runAfter": {
+                "Check_ThirdDose_7_Days": ["Succeeded"]
+              },
+              "type": "If",
+              "expression": {
+                "equals": ["@outputs('Calculate_Days_Until_ThirdDose')", 3]
+              },
+              "actions": {
+                "Send_ThirdDose_3Day_Reminder": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "parameters": {
+                      "emailMessage/To": "@items('Loop_Through_Staff')?['Email']",
+                      "emailMessage/Subject": "Reminder: Your Third Vaccine Dose is in 3 Days",
+                      "emailMessage/Body": "<p>Dear @{items('Loop_Through_Staff')?['StaffName']},</p><p>This is a reminder that your <strong>third vaccine dose (booster)</strong> is scheduled for <strong>@{formatDateTime(items('Loop_Through_Staff')?['ThirdDose'], 'dddd, MMMM d, yyyy')}</strong> (3 days from now).</p><p>Please make the necessary arrangements.</p><p>Best regards,<br>NBI Hospital Health Team</p>",
+                      "emailMessage/Importance": "Normal"
+                    },
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                      "connectionName": "shared_office365",
+                      "operationId": "SendEmailV2"
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  }
+                }
+              }
+            },
+            "Check_ThirdDose_1_Day": {
+              "runAfter": {
+                "Check_ThirdDose_3_Days": ["Succeeded"]
+              },
+              "type": "If",
+              "expression": {
+                "equals": ["@outputs('Calculate_Days_Until_ThirdDose')", 1]
+              },
+              "actions": {
+                "Send_ThirdDose_1Day_Reminder": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "parameters": {
+                      "emailMessage/To": "@items('Loop_Through_Staff')?['Email']",
+                      "emailMessage/Subject": "TOMORROW: Your Third Vaccine Dose",
+                      "emailMessage/Body": "<p>Dear @{items('Loop_Through_Staff')?['StaffName']},</p><p><strong>IMPORTANT:</strong> Your <strong>third vaccine dose (booster)</strong> is scheduled for <strong>TOMORROW</strong> (@{formatDateTime(items('Loop_Through_Staff')?['ThirdDose'], 'dddd, MMMM d, yyyy')}).</p><p>Please ensure you are ready for your vaccination.</p><p>Best regards,<br>NBI Hospital Health Team</p>",
+                      "emailMessage/Importance": "High"
+                    },
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                      "connectionName": "shared_office365",
+                      "operationId": "SendEmailV2"
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
